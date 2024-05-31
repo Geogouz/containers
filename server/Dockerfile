@@ -28,6 +28,13 @@ RUN rpm -i https://download.oracle.com/otn_software/linux/instantclient/1912000/
     echo "/usr/lib/oracle/19/client64/lib" >/etc/ld.so.conf.d/oracle.conf; \
     ldconfig
 
+# Install additional packages for arm64 architecture
+RUN if [ "$(uname -m)" = "aarch64" ]; then \
+    dnf install -y gcc make python3-devel; \
+    dnf clean all; \
+    rm -rf /var/cache/dnf; \
+fi
+
 RUN python3 -m pip install --no-cache-dir --upgrade pip && \
     python3 -m pip install --no-cache-dir --upgrade setuptools
 RUN python3 -m pip install --no-cache-dir --pre rucio[oracle,mysql,postgresql]==$TAG

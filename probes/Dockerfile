@@ -13,7 +13,6 @@ WORKDIR /tmp
 ADD oic.rpm /tmp
 
 RUN dnf install -y epel-release.noarch && \
-    dnf upgrade -y && \
     dnf install -y \
         git \
         gcc \
@@ -22,15 +21,43 @@ RUN dnf install -y epel-release.noarch && \
         openssl-devel \
         procps-ng \
         python-devel \
-        python-pip && \
+        python-pip \
+        make \
+        go \
+        tar \
+        gzip \
+        rsync \
+        wget && \
     dnf clean all && \
     rm -rf /var/cache/dnf
 
-RUN rpm -i https://download.oracle.com/otn_software/linux/instantclient/1912000/oracle-instantclient19.12-basiclite-19.12.0.0.0-1.x86_64.rpm; \
+RUN rpm -i https://download.oracle.com/otn_software/linux/instantclient/1923000/oracle-instantclient19.23-basic-19.23.0.0.0-1.aarch64.rpm; \
     echo "/usr/lib/oracle/19/client64/lib" >/etc/ld.so.conf.d/oracle.conf; \
     ldconfig
 
-RUN rpm -i https://github.com/dshearer/jobber/releases/download/v1.4.0/jobber-1.4.0-1.el7.x86_64.rpm
+# Set Go environment variables
+ENV GOPATH=/root/go
+ENV GOBIN=$GOPATH/bin
+
+# Create necessary directories
+RUN mkdir -p $GOBIN && mkdir -p $GOPATH/src/github.com/dshearer
+
+# Install dep (Go dependency management tool)
+RUN curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+
+# Download and extract the jobber tarball
+RUN wget https://github.com/dshearer/jobber/archive/refs/tags/v1.4.0.tar.gz && \
+    tar -xzf v1.4.0.tar.gz && \
+    mv jobber-1.4.0 $GOPATH/src/github.com/dshearer/jobber && \
+    cd $GOPATH/src/github.com/dshearer/jobber && \
+    go mod init github.com/dshearer/jobber && \
+    go mod tidy && \
+    go mod vendor && \
+    make && \
+    make install
+
+# Clean up
+RUN rm -rf /tmp/*
 
 RUN python3 -m pip install --no-cache-dir --upgrade pip
 RUN python3 -m pip install --no-cache-dir --upgrade setuptools

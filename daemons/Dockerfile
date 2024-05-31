@@ -5,19 +5,28 @@
 # You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 FROM almalinux:9 as rpm_builder
-    RUN dnf upgrade -y
-    RUN dnf install -y rpm-build rpmdevtools yum-utils epel-release.noarch
-    RUN yum-config-manager --enable crb
+
+RUN dnf upgrade -y
+RUN dnf install -y rpm-build rpmdevtools yum-utils epel-release.noarch
+RUN yum-config-manager --enable crb
+
+# Conditional execution based on architecture
+RUN if [ "$(uname -m)" != "aarch64" ]; then  \
+    echo "Non-arm64 architecture detected, building OpenSSL from source and rebuilding davix"; \
     # BUILD and install openssl 3.1
-    ADD openssl.spec    /root/rpmbuild/SPECS/openssl.spec
-    RUN yum-builddep -y /root/rpmbuild/SPECS/openssl.spec
-    RUN spectool -g     /root/rpmbuild/SPECS/openssl.spec --directory /root/rpmbuild/SOURCES/
-    RUN rpmbuild -bb    /root/rpmbuild/SPECS/openssl.spec
-    RUN dnf install -y  /root/rpmbuild/RPMS/*/*
+    ADD openssl.spec /root/rpmbuild/SPECS/openssl.spec; \
+    yum-builddep -y /root/rpmbuild/SPECS/openssl.spec; \
+    spectool -g /root/rpmbuild/SPECS/openssl.spec --directory /root/rpmbuild/SOURCES/; \
+    rpmbuild -bb /root/rpmbuild/SPECS/openssl.spec; \
+    dnf install -y /root/rpmbuild/RPMS/*/*; \
     # REBUILD davix to use openssl 3.1
-    RUN yumdownloader --source davix
-    RUN yum-builddep -y --srpm davix*.src.rpm
-    RUN rpmbuild --rebuild davix-*.src.rpm
+    yumdownloader --source davix; \
+    yum-builddep -y --srpm davix*.src.rpm; \
+    rpmbuild --rebuild davix-*.src.rpm; \
+else \
+    echo "arm64 architecture detected, skipping custom OpenSSL build"; \
+    dnf install -y openssl-3.1.4 \
+fi
 
 FROM almalinux:9
 
@@ -52,11 +61,26 @@ RUN rpm -i https://download.oracle.com/otn_software/linux/instantclient/1912000/
     echo "/usr/lib/oracle/19/client64/lib" >/etc/ld.so.conf.d/oracle.conf; \
     ldconfig
 
-RUN python3 -m pip install --no-cache-dir --upgrade pip && \
-    python3 -m pip install --no-cache-dir --upgrade setuptools
-RUN python3 -m pip install --no-cache-dir --pre rucio[oracle,mysql,postgresql,globus]==$TAG
+# Set default environment variable that can be overridden
+ENV USE_DAVIX_WITH_OPENSSL31=False
 
-RUN python3 -m pip install --no-cache-dir j2cli
+# Install additional packages for arm64 architecture and set environment variables conditionally
+RUN if [ "$(uname -m)" = "aarch64" ]; then \
+        dnf install -y gcc python3-devel && \
+        dnf clean all && \
+        rm -rf /var/cache/dnf; \
+    else \
+        USE_DAVIX_WITH_OPENSSL31=True; \
+    fi
+
+# TODO: The following step is required for custom building cases (i.e. non arm64)
+#COPY --from=rpm_builder /root/rpmbuild/RPMS/x86_64/*.rpm /tmp/rpms/
+
+RUN python3 -m pip install --no-cache-dir --upgrade pip && \
+    python3 -m pip install --no-cache-dir --upgrade setuptools && \
+    python3 -m pip install --no-cache-dir --pre rucio[oracle,mysql,postgresql,globus]==$TAG && \
+    python3 -m pip install --no-cache-dir j2cli
+
 ADD rucio.config.default.cfg /tmp/
 ADD start-daemon.sh /
 
@@ -64,11 +88,7 @@ RUN update-crypto-policies --set DEFAULT:SHA1
 
 RUN mkdir /var/log/rucio
 
-COPY --from=rpm_builder /root/rpmbuild/RPMS/x86_64/*.rpm /tmp/rpms/
-
 VOLUME /var/log/rucio
 VOLUME /opt/rucio/etc
-
-ENV USE_DAVIX_WITH_OPENSSL31=True
 
 ENTRYPOINT ["/start-daemon.sh"]

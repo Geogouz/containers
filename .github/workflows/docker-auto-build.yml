@@ -1,8 +1,6 @@
 name: docker-auto-build
 
 on:
-  release: 
-    types: [created]
   workflow_dispatch:
 
 jobs:
@@ -11,22 +9,22 @@ jobs:
     strategy:
       matrix:
         context: [
-          'clients, prepend-rucio, prepend-release, push-tagged, push-latest', 
-          'server, prepend-rucio, prepend-release, push-tagged, push-latest, push-alma9-latest',
-          'daemons, prepend-rucio, prepend-release, push-tagged, push-latest, push-alma9-latest',
-          'dev, prepend-rucio, prepend-release, push-tagged, push-latest, push-alma9-latest',
-          'ui, prepend-rucio, prepend-release, push-tagged, push-latest',
-          'webui, prepend-rucio, prepend-release, push-tagged, push-latest',
-          'init, prepend-rucio, prepend-release, push-tagged, push-latest',
-          'probes, push-tagged, push-latest',
-          'fts, push-tagged, push-latest',
-          'fts-cron/Dockerfile_cpp, push-tagged, push-latest',
-          'fts-cron/Dockerfile_java, push-tagged, push-latest, custom-tag=java',
-          'ssh, push-tagged, push-latest',
-          'xrootd, push-tagged, push-latest',
-          'xrootd-noauth, push-tagged, push-latest',
-          'fs, rucio-clients:release-#TAG, prepend-rucio, push-tagged, push-latest',
-          'webdav, push-latest'
+          'clients, prepend-rucio, prepend-release, push-tagged, force-latest',
+          'server, prepend-rucio, prepend-release, push-tagged, force-latest, push-alma9-latest',
+          'daemons, prepend-rucio, prepend-release, push-tagged, force-latest, push-alma9-latest',
+          'dev, prepend-rucio, prepend-release, push-tagged, force-latest, push-alma9-latest',
+          'ui, prepend-rucio, prepend-release, push-tagged, force-latest',
+          'webui, prepend-rucio, prepend-release, push-tagged, force-latest',
+          'init, prepend-rucio, prepend-release, push-tagged, force-latest',
+          'probes, push-tagged, force-latest',
+          'fts, push-tagged, force-latest',
+          'fts-cron/Dockerfile_cpp, push-tagged, force-latest',
+          'fts-cron/Dockerfile_java, push-tagged, force-latest, custom-tag=java',
+          'ssh, push-tagged, force-latest',
+          'xrootd, push-tagged, force-latest',
+          'xrootd-noauth, push-tagged, force-latest',
+          'fs, rucio-clients:release-#TAG, prepend-rucio, push-tagged, force-latest',
+          'webdav, force-latest'
         ]
       fail-fast: false
     
@@ -46,7 +44,13 @@ jobs:
       - name: Get the release tag from GitHub
         id: release_tag
         run: echo ::set-output name=version::${GITHUB_REF/refs\/tags\//}
-      
+
+      - name: Get the latest tag
+        id: latest_tag
+        run: echo ::set-output name=version::$(git describe --tags `git rev-list --tags --max-count=1`)
+        # It is important for the current commit state in the master-arm64-actions branch, to correspond to the latest
+        # fetched tag version. Otherwise, the release version will not be correct.
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
 
@@ -86,7 +90,7 @@ jobs:
           # prepend-rucio: adds `rucio-` to image name
           # prepend-release: adds `release-` to image name
           # push-tagged: adds the $GIT_TAG to image name
-          # push-latest: if present, and the latest commit SHA on master branch 
+          # push-latest: if present, and the latest commit SHA on master (arm64) branch 
           #              matches the last commmit SHA of the current tag, adds release 
           #              version to image name.
           # force-latest: if present, the latest tag will be force pushed to Docker Hub
@@ -105,14 +109,33 @@ jobs:
           # | 1               	| 1           	| :release-$GIT_TAG 	|
 
           CONTEXT=$(echo "${{ matrix.context }}")
+          echo "CONTEXT=$CONTEXT"
+          
           CONTEXT_DIR=$(echo "${CONTEXT}" | cut -d, -f1 )
+          echo "CONTEXT_DIR=$CONTEXT_DIR"
+          
           PARENT=$(echo "${CONTEXT}" | cut -d, -f2 | xargs)
-          GIT_TAG=${{ steps.release_tag.outputs.version }}
-          BASE_TAG="${{ github.repository_owner}}/"
+          echo "PARENT=$PARENT"
+          
+          GIT_TAG=${{ steps.latest_tag.outputs.version }}
+          echo "GIT_TAG=$GIT_TAG"
+          
+          DOCKER_HUB_USER_OVERRIDE=dxen
+          
+          BASE_TAG="$DOCKER_HUB_USER_OVERRIDE/"
+          echo "BASE_TAG=$BASE_TAG"
+          
           PARENT_IMAGE_AVAILIBILITY_INTERVAL=60
+          echo "PARENT_IMAGE_AVAILIBILITY_INTERVAL=$PARENT_IMAGE_AVAILIBILITY_INTERVAL"
+          
           MAX_ATTEMPTS=10
+          echo "MAX_ATTEMPTS=$MAX_ATTEMPTS"
+          
           GIT_TAG_COMMIT_SHA=$(echo $(git rev-list -n 1 $GIT_TAG))
-          GIT_MASTER_LATEST_COMMIT_SHA=$(echo $(git ls-remote --heads origin | grep master  |  awk -F '\t' '{print $1}'))
+          echo "GIT_TAG_COMMIT_SHA=$GIT_TAG_COMMIT_SHA"
+          
+          GIT_MASTER_ARM64_LATEST_COMMIT_SHA=$(echo $(git ls-remote --heads origin | grep master-arm64-actions  |  awk -F '\t' '{print $1}'))
+          echo "GIT_MASTER_ARM64_LATEST_COMMIT_SHA=$GIT_MASTER_ARM64_LATEST_COMMIT_SHA"
 
           # if git tag begins with webui-{semantic version}, then treat context as a webui release
           if [[ $GIT_TAG =~ ^webui-([0-9]+.[0-9]+.[0-9]+)$ ]]; then
@@ -163,14 +186,14 @@ jobs:
             IMAGE_TAG+="$BASE_TAG:release-$GIT_TAG"
           fi
 
-          if [[ "${CONTEXT}" =~ .*"push-latest".* &&  $GIT_MASTER_LATEST_COMMIT_SHA == $GIT_TAG_COMMIT_SHA  ]]; then
-              echo "There's a match between the SHA of latest commit on Master ($GIT_MASTER_LATEST_COMMIT_SHA) and \
+          if [[ "${CONTEXT}" =~ .*"push-latest".* &&  $GIT_MASTER_ARM64_LATEST_COMMIT_SHA == $GIT_TAG_COMMIT_SHA  ]]; then
+              echo "There's a match between the SHA of latest commit on Master (arm64) ($GIT_MASTER_ARM64_LATEST_COMMIT_SHA) and \
                     latest commit on current tag $TAG ($GIT_TAG_COMMIT_SHA)"
               echo "An image with latest tag will be pushed to Docker Hub"
               LATEST_TAG="$BASE_TAG:latest"
           elif [[ "${CONTEXT}" =~ .*"push-latest".*  ]]; then
-              echo "Note: Image tagged latest will not be pushed as commit SHA's on master and current tag do not match!!"
-              echo "Latest commit on Master: $GIT_MASTER_LATEST_COMMIT_SHA"
+              echo "Note: Image tagged latest will not be pushed as commit SHA's on master (arm64) and current tag do not match!!"
+              echo "Latest commit on Master (arm64): $GIT_MASTER_ARM64_LATEST_COMMIT_SHA"
               echo "Latest commit on $GIT_TAG: $GIT_TAG_COMMIT_SHA"
           fi
 
@@ -223,11 +246,11 @@ jobs:
             PARENT=${PARENT/\#TAG/$GIT_TAG}
             fi
 
-            PARENT="${{ github.repository_owner }}/${PARENT}"
+            PARENT="${DOCKER_HUB_USER_OVERRIDE}/${PARENT}"
             for i in $(seq 1 1 $MAX_ATTEMPTS)
             do
                 echo "Attempt ${i}: Waiting for $PARENT to be available on Docker Hub"
-                docker pull $PARENT > /dev/null && echo "$PARENT found" && break || echo "Parent not found! Waiting $PARENT_IMAGE_AVAILIBILITY_INTERVAL seconds"
+                docker pull --platform linux/arm64 $PARENT > /dev/null && echo "$PARENT found" && break || echo "Parent not found! Waiting $PARENT_IMAGE_AVAILIBILITY_INTERVAL seconds"
                 sleep $PARENT_IMAGE_AVAILIBILITY_INTERVAL
 
                 if [[ $i == $MAX_ATTEMPTS ]]; then
@@ -257,4 +280,4 @@ jobs:
           push: true
           tags: '${{ steps.release.outputs.tags }}'
           build-args: TAG=${{ steps.release.outputs.git_tag }}
-  
+          platforms: linux/arm64

@@ -1,5 +1,5 @@
 ARG TAG
-FROM rucio/rucio-clients:release-$TAG
+FROM dxen/rucio-clients:release-$TAG
 
 USER root
 RUN dnf install -y git cmake3 libcurl-devel fuse-devel tree

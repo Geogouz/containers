@@ -7,13 +7,18 @@ RUN yum install -y epel-release.noarch http://linuxsoft.cern.ch/wlcg/centos7/x86
     yum clean all && \
     rm -rf /var/cache/yum
 
+# Configure yum to skip unavailable repositories
+RUN yum-config-manager --save --setopt=wlcg.skip_if_unavailable=true
+
 RUN yum update -y && \
     yum upgrade -y && \
     yum clean all && \
     rm -rf /var/cache/yum
 
-RUN yum -y install https://repo.ius.io/ius-release-el7.rpm &&\
-    yum install -y httpd python36u-pip python36-mod_wsgi libaio gcc python36-devel.x86_64 mod_ssl openssl-devel.x86_64 python36-m2crypto libnsl.x86_64 patch.x86_64 xrootd-client && \
+# Temporarily disable IUS repository
+RUN yum install -y httpd libaio gcc  \
+    python36 python36-pip python36-mod_wsgi python36-devel python36-setuptools python36-requests python36-m2crypto mod_ssl  \
+    openssl-devel libnsl patch xrootd-client && \
     yum clean all && \
     rm -rf /var/cache/yum
 
@@ -23,8 +28,7 @@ RUN chmod +x /usr/bin/kubectl
 
 # Install VOMS and FTS clients for delegating proxies
 RUN yum -y install ca-certificates.noarch lcg-CA ca_* fetch-crl voms-clients-cpp fts-rest-cli \
-    wlcg-iam-lsc-atlas wlcg-iam-vomses-atlas wlcg-voms-atlas wlcg-iam-lsc-cms wlcg-iam-vomses-cms wlcg-voms-cms \
-    python-pip python-setuptools python-requests && \
+    wlcg-iam-lsc-atlas wlcg-iam-vomses-atlas wlcg-voms-atlas wlcg-iam-lsc-cms wlcg-iam-vomses-cms wlcg-voms-cms && \
     yum clean all && \
     rm -rf /var/cache/yum
 
