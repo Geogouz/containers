@@ -43,7 +43,7 @@ ADD --chown=user:user rucio.default.cfg /opt/user/rucio.default.cfg
 ADD init_rucio.sh /etc/profile.d/rucio_init.sh
 ADD --chown=user;user ./entrypoint.sh /opt/user/entrypoint.sh
 
-ENV PATH $PATH:/opt/rucio/bin
+ENV PATH="/opt/rucio/bin:${PATH}"
 
 ARG POLICY_PACKAGE_REQUIREMENTS
 ARG USER=root
